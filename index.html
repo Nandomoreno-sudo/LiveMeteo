@@ -1,0 +1,408 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+<title>Can Pastilla Live Meteo</title>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@3.9.1/dist/chart.min.js"></script>
+<style>
+  body {
+    margin: 0;
+    background: #111;
+    color: white;
+    font-family: Arial, sans-serif;
+    overflow-x: hidden;
+  }
+  .main-container {
+    width: 100%;
+    max-width: 1000px;
+    margin: 0 auto;
+    border: 3px solid #87CEEB;
+  }
+  .header {
+    background-color: #87CEEB;
+    color: black;
+    padding: 10px;
+    text-align: center;
+    font-weight: bold;
+    font-size: clamp(1em, 4vw, 1.2em);
+  }
+  .weather-panel {
+    background: rgba(0,0,0,0.7);
+    padding: 10px;
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: space-around;
+    align-items: center;
+    font-size: clamp(12px, 3.5vw, 16px);
+    backdrop-filter: blur(4px);
+    min-height: 120px;
+  }
+  .temp-container {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    min-width: 60px;
+  }
+  .temp {
+    font-weight: 700;
+    font-size: clamp(0.8em, 3vw, 1.5em); /* Tamaño reducido a la mitad */
+    line-height: 1;
+    white-space: nowrap;
+  }
+  .temp sup {
+    font-size: 0.6em;
+    vertical-align: super;
+  }
+  .weather-icon {
+    font-size: clamp(1.8em, 7vw, 2.8em); /* Tamaño reducido proporcionalmente */
+    line-height: 1;
+    margin-top: 5px;
+  }
+  .wind-speed {
+    font-weight: 800;
+    font-size: clamp(2em, 9vw, 3.2em);
+    color: #2ecc71;
+    text-align: center;
+    text-shadow: 0 0 5px rgba(46, 204, 113, 0.7);
+    min-width: 80px;
+  }
+  .wind-direction-container {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+  }
+  .compass {
+    width: clamp(40px, 10vw, 55px);
+    height: clamp(40px, 10vw, 55px);
+    border-radius: 50%;
+    border: 2px solid #0bf;
+    position: relative;
+    margin-bottom: 3px;
+  }
+  .compass-arrow {
+    position: absolute;
+    top: 50%; left: 50%;
+    width: 2px;
+    height: clamp(16px, 4vw, 22px);
+    background-color: #ff5252;
+    transform-origin: bottom center;
+    transform: translate(-50%, -100%) rotate(0deg);
+  }
+  .compass-center {
+    position: absolute;
+    top: 50%; left: 50%;
+    width: clamp(6px, 2vw, 9px);
+    height: clamp(6px, 2vw, 9px);
+    background-color: #0bf;
+    border-radius: 50%;
+    transform: translate(-50%, -50%);
+  }
+  .compass-label {
+    font-size: clamp(0.8em, 3vw, 1em);
+    color: #0bf;
+    text-align: center;
+    font-weight: 600;
+  }
+  .chart-container {
+    width: 100%;
+    height: clamp(100px, 30vh, 140px);
+  }
+  canvas.chart {
+    width: 100% !important;
+    height: 100% !important;
+  }
+  .webcam-container {
+    width: 100%;
+    aspect-ratio: 16/9;
+  }
+  iframe {
+    width: 100%;
+    height: 100%;
+    border: none;
+    display: block;
+  }
+
+  @media (min-width: 768px) {
+    .weather-panel {
+      flex-wrap: nowrap;
+      padding: 15px;
+      min-height: 125px;
+    }
+    .temp-container {
+      margin-right: 15px;
+    }
+    .wind-speed {
+      min-width: 110px;
+    }
+    .wind-direction-container {
+      margin: 0 15px;
+    }
+    .chart-container {
+      margin-left: 15px;
+    }
+  }
+</style>
+</head>
+<body>
+
+<div class="main-container">
+  <div class="header">Can Pastilla Live Meteo</div>
+  
+  <div class="weather-panel" id="weather-panel">
+    <div class="temp-container">
+      <div class="temp" id="temp">--<sup>°C</sup></div>
+      <div class="weather-icon" id="weather-icon">☀️</div>
+    </div>
+    <div class="wind-speed" id="wind-speed">-- Kn</div>
+    <div class="wind-direction-container">
+      <div class="compass" id="compass">
+        <div class="compass-arrow" id="compass-arrow"></div>
+        <div class="compass-center"></div>
+      </div>
+      <div class="compass-label" id="compass-label">--</div>
+    </div>
+    <div class="chart-container">
+      <canvas class="chart" id="windChart"></canvas>
+    </div>
+  </div>
+
+  <div class="webcam-container">
+    <iframe src="https://www.youtube.com/embed/gHAKLHiUIM0?autoplay=1&mute=1" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" allowfullscreen></iframe>
+  </div>
+</div>
+
+<script>
+  const API_URL = "https://cmsap.oceandrivers.com/api/v1.0/getWeatherDisplay/cmsap/?period=latesthour";
+
+  function getCardinal(deg) {
+    const directions = ["N", "NE", "E", "SE", "S", "SW", "W", "NW"];
+    return directions[Math.round(deg / 45) % 8];
+  }
+
+  function getWeatherIcon(weatherCode) {
+    const icons = {
+      '1': '☀️', '2': '⛅', '3': '☁️', '4': '🌧️', '5': '⛈️', '6': '🌨️', '7': '🌫️'
+    };
+    return icons[weatherCode] || '☀️';
+  }
+
+  let chartInstance = null;
+  let startTime = null;
+
+  function updateCompass(directionDeg) {
+    const arrow = document.getElementById("compass-arrow");
+    const label = document.getElementById("compass-label");
+    const cardinal = getCardinal(directionDeg);
+    
+    arrow.style.transform = `translate(-50%, -100%) rotate(${directionDeg}deg)`;
+    label.textContent = `${cardinal} (${Math.round(directionDeg)}°)`;
+  }
+
+  function adjustChartForMobile() {
+    if (!chartInstance) return;
+    
+    const isMobile = window.innerWidth < 768;
+    chartInstance.options.scales.x.ticks.font.size = isMobile ? 10 : 12;
+    chartInstance.options.scales.y.ticks.font.size = isMobile ? 10 : 12;
+    chartInstance.update();
+  }
+
+  async function fetchWeather() {
+    try {
+      const res = await fetch(API_URL);
+      const data = await res.json();
+
+      const latest = data.LATEST_DATA || {};
+      const speed = latest.TWS?.toFixed(1) ?? "--";
+      const directionDeg = latest.TWD ?? 0;
+      const temp = latest.TEMPERATURE?.toFixed(1) ?? "--";
+      const weatherCode = latest.ICON_NOW?.toString() || '1';
+
+      document.getElementById("temp").innerHTML = `${temp}<sup>°C</sup>`;
+      document.getElementById("weather-icon").textContent = getWeatherIcon(weatherCode);
+      document.getElementById("wind-speed").textContent = `${speed} Kn`;
+      updateCompass(directionDeg);
+
+      if (data.TIME && data.TWS) {
+        drawWindGraph(data, parseFloat(speed));
+      } else {
+        clearChart();
+      }
+
+    } catch (error) {
+      console.error("Error fetching weather data:", error);
+      document.getElementById("temp").innerHTML = "--<sup>°C</sup>";
+      document.getElementById("weather-icon").textContent = "❓";
+      document.getElementById("wind-speed").textContent = "-- Kn";
+      document.getElementById("compass-label").textContent = "--";
+      clearChart();
+    }
+  }
+
+  function drawWindGraph(data, currentSpeed) {
+    const history = [];
+    let currentMaxWind = 0;
+    let currentMinWind = Infinity;
+    
+    if (data.TIME && data.TIME[0]) {
+      startTime = new Date(data.TIME[0]);
+    }
+
+    for (let i = 0; i < data.length; i++) {
+      if (data.TIME[i] && data.TWS[i] !== undefined) {
+        const date = new Date(data.TIME[i]);
+        const minutes = date.getMinutes();
+        
+        if (minutes % 5 === 0 || i === 0 || i === data.length - 1) {
+          let label;
+          if (i === 0) {
+            label = date.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'});
+          } else {
+            const diffMinutes = Math.floor((date - startTime) / (1000 * 60));
+            label = `+${diffMinutes}'`;
+          }
+          
+          history.push({
+            label: label,
+            value: data.TWS[i],
+            timestamp: data.TIME[i],
+            twd: data.TWD[i]
+          });
+          
+          if (data.TWS[i] > currentMaxWind) currentMaxWind = data.TWS[i];
+          if (data.TWS[i] < currentMinWind) currentMinWind = data.TWS[i];
+        }
+      }
+    }
+
+    const range = 15;
+    let minY, maxY;
+    
+    if (currentSpeed && !isNaN(currentSpeed)) {
+      minY = Math.max(0, Math.floor(currentSpeed - range/2));
+      maxY = minY + range;
+    } else {
+      minY = 0;
+      maxY = Math.max(range, Math.ceil(currentMaxWind) + 2);
+    }
+
+    if (history.length === 0) {
+      clearChart();
+      return;
+    }
+
+    history.sort((a, b) => a.timestamp - b.timestamp);
+
+    const canvas = document.getElementById("windChart");
+    const ctx = canvas.getContext("2d");
+
+    if (chartInstance) {
+      chartInstance.destroy();
+      chartInstance = null;
+    }
+
+    chartInstance = new Chart(ctx, {
+      type: "line",
+      data: {
+        labels: history.map(item => item.label),
+        datasets: [{
+          label: "Speed",
+          data: history.map(item => item.value),
+          borderColor: "#2ecc71",
+          backgroundColor: "rgba(46, 204, 113, 0.2)",
+          borderWidth: 2,
+          tension: 0.2,
+          fill: true,
+          pointRadius: window.innerWidth < 768 ? 3 : 4,
+          pointBackgroundColor: "#2ecc71",
+          pointBorderColor: "white",
+          pointHoverRadius: window.innerWidth < 768 ? 4 : 6
+        }]
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: {
+          legend: { display: false },
+          tooltip: {
+            displayColors: false,
+            callbacks: {
+              title: (context) => {
+                const date = new Date(history[context[0].dataIndex].timestamp);
+                return date.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'});
+              },
+              label: (context) => {
+                const point = history[context.dataIndex];
+                return `${point.value.toFixed(1)} Kn (${getCardinal(point.twd)})`;
+              }
+            }
+          }
+        },
+        scales: {
+          x: {
+            ticks: {
+              color: "white",
+              font: { 
+                size: window.innerWidth < 768 ? 10 : 12,
+                weight: 'bold'
+              },
+              maxRotation: window.innerWidth < 768 ? 45 : 0,
+              autoSkip: true,
+              maxTicksLimit: window.innerWidth < 768 ? 6 : 12
+            },
+            grid: { display: false }
+          },
+          y: {
+            title: {
+              display: true,
+              text: 'Speed',
+              color: 'white',
+              font: { 
+                size: window.innerWidth < 768 ? 10 : 12,
+                weight: 'bold'
+              }
+            },
+            beginAtZero: false,
+            min: minY,
+            max: maxY,
+            ticks: {
+              color: "white",
+              font: { 
+                size: window.innerWidth < 768 ? 10 : 12,
+                weight: 'bold'
+              },
+              stepSize: 2,
+              callback: val => val % 1 === 0 ? val : ''
+            },
+            grid: { color: "rgba(255,255,255,0.1)" }
+          }
+        }
+      }
+    });
+  }
+
+  function clearChart() {
+    const canvas = document.getElementById("windChart");
+    if (!canvas) return;
+    
+    const ctx = canvas.getContext("2d");
+    if (chartInstance) {
+      chartInstance.destroy();
+      chartInstance = null;
+    }
+    
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    ctx.fillStyle = "white";
+    ctx.font = "14px Arial";
+    ctx.textAlign = "center";
+    ctx.fillText("Cargando datos...", canvas.width/2, canvas.height/2);
+  }
+
+  window.addEventListener('resize', adjustChartForMobile);
+  fetchWeather();
+  setInterval(fetchWeather, 60000);
+</script>
+
+</body>
+</html>
